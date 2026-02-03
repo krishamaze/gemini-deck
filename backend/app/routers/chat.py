@@ -1,12 +1,17 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from app.services.gemini_client import gemini_client
 from app.services.memory_store import get_memory_store, MemoryStore
+from app.services.security import get_security_service, SecurityService
 import json
 
 router = APIRouter()
 
 @router.websocket("/stream")
-async def websocket_endpoint(websocket: WebSocket, store: MemoryStore = Depends(get_memory_store)):
+async def websocket_endpoint(
+    websocket: WebSocket, 
+    store: MemoryStore = Depends(get_memory_store),
+    security: SecurityService = Depends(get_security_service)
+):
     await websocket.accept()
     try:
         while True:
@@ -16,6 +21,12 @@ async def websocket_endpoint(websocket: WebSocket, store: MemoryStore = Depends(
             user_prompt = data.get("prompt")
             
             if not user_prompt:
+                continue
+
+            # 0. Security Check
+            is_safe, reason = security.analyze_prompt(user_prompt)
+            if not is_safe:
+                await websocket.send_json({"type": "error", "content": reason})
                 continue
 
             # 1. Retrieve Context

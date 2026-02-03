@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+      - "5900:5900"
+      - "6080:6080"
+    volumes:
+      - ./backend:/app  # Hot reload for dev
+      - ./scripts:/scripts
+      - gemini_memory:/root/.gemini_memory # Persistent memory
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY} # User must supply this
+    restart: unless-stopped
+
+volumes:
+  gemini_memory:

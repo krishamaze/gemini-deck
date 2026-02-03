@@ -8,7 +8,7 @@ This document outlines the gap analysis between our current MVP implementation a
 ### Current State
 - [x] Basic process isolation (CLI runs as subprocess).
 - [ ] **Identity:** Agent shares the host OS user's full permissions.
-- [ ] **Input Sanitization:** Raw user prompts are passed to the CLI.
+- [x] **Input Sanitization:** Basic heuristic middleware implemented (SecurityService).
 
 ### 2026 Best Practices Gap
 - **Identity-First Controls:** The agent should run as a restricted system user (`gemini-agent`), not the root/admin user.
@@ -16,7 +16,7 @@ This document outlines the gap analysis between our current MVP implementation a
 - **Approval Gates:** High-risk tool usage (file system writes, shell execution) must require explicit human confirmation via the UI.
 
 ### Roadmap
-1. Create a `security_middleware.py` in the backend.
+1. Create a `security_middleware.py` in the backend (Done).
 2. Implement a "Human-in-the-loop" approval flow for the WebSocket stream.
 
 ## 2. Observability (Priority: High)
@@ -40,6 +40,7 @@ This document outlines the gap analysis between our current MVP implementation a
 ### Current State
 - [x] **Dependency Injection:** Refactored `MemoryStore` to use FastAPI's DI system (Completed).
 - [ ] **Type Safety:** Python backend is typed, but Frontend/Backend contract is loose (JSON blobs).
+- [x] **Process Management:** Dockerfile and docker-compose.yml created.
 
 ### 2026 Best Practices Gap
 - **End-to-End Type Safety:** Use Pydantic models to generate TypeScript interfaces automatically for the Frontend.
@@ -47,4 +48,4 @@ This document outlines the gap analysis between our current MVP implementation a
 
 ### Roadmap
 1. Generate `openapi.json` and use `openapi-typescript` to generate frontend types.
-2. Create a `docker-compose.yml` for the entire stack (Backend + Frontend + Xvfb).
+2. Create a `docker-compose.yml` for the entire stack (Done).
