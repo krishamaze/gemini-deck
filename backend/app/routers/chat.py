@@ -24,38 +24,45 @@ def get_user_id_from_token(token: str) -> int | None:
 async def websocket_endpoint(
     websocket: WebSocket, 
     token: str = Query(default=None),
+    api_key: str = Query(default=None),
     store: MemoryStore = Depends(get_memory_store),
     security: SecurityService = Depends(get_security_service)
 ):
     """
     WebSocket endpoint for streaming chat with Gemini.
     
-    Supports two modes:
-    1. Authenticated: Uses multi-account system with auto-rotation
-    2. Unauthenticated: Uses GEMINI_API_KEY environment variable
+    Supports three modes:
+    1. Authenticated: Uses multi-account system with auto-rotation (token param)
+    2. Direct API key: Uses user-provided API key (api_key param)
+    3. Environment fallback: Uses GEMINI_API_KEY environment variable
     
-    Client should connect with: ws://host/api/chat/stream?token=<jwt_token>
+    Client should connect with:
+    - ws://host/api/chat/stream?token=<jwt_token> (authenticated)
+    - ws://host/api/chat/stream?api_key=<gemini_api_key> (BYOK)
     """
     await websocket.accept()
     
-    # Determine which client to use
+    # Determine which client to use (priority order)
     user_id = get_user_id_from_token(token)
     
     if user_id:
         # Authenticated user - use multi-account client
         client = MultiAccountGeminiClient(user_id)
+    elif api_key:
+        # User provided their own API key (BYOK)
+        client = GeminiAPIClient(api_key)
     else:
-        # Unauthenticated - use default API key
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
+        # Fallback to environment variable
+        env_api_key = os.environ.get("GEMINI_API_KEY")
+        if not env_api_key:
             await websocket.send_json({
                 "type": "error",
-                "content": "No API key available. Please login or set GEMINI_API_KEY.",
+                "content": "No API key configured. Click Settings to add your Gemini API key.",
                 "trace_id": str(uuid.uuid4())
             })
             await websocket.close()
             return
-        client = GeminiAPIClient(api_key)
+        client = GeminiAPIClient(env_api_key)
     
     try:
         while True:
