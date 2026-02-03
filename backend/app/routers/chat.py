@@ -1,25 +1,68 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from app.services.gemini_client import gemini_client
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
+from app.services.gemini_client import GeminiAPIClient, MultiAccountGeminiClient, QuotaExceededError
 from app.services.memory_store import get_memory_store, MemoryStore
 from app.services.security import get_security_service, SecurityService
+from app.routers.auth import verify_token
 import json
 import uuid
+import os
 
 router = APIRouter()
+
+
+def get_user_id_from_token(token: str) -> int | None:
+    """Extract user ID from JWT token."""
+    if not token:
+        return None
+    payload = verify_token(token)
+    if payload:
+        return int(payload.get("sub"))
+    return None
+
 
 @router.websocket("/stream")
 async def websocket_endpoint(
     websocket: WebSocket, 
+    token: str = Query(default=None),
     store: MemoryStore = Depends(get_memory_store),
     security: SecurityService = Depends(get_security_service)
 ):
+    """
+    WebSocket endpoint for streaming chat with Gemini.
+    
+    Supports two modes:
+    1. Authenticated: Uses multi-account system with auto-rotation
+    2. Unauthenticated: Uses GEMINI_API_KEY environment variable
+    
+    Client should connect with: ws://host/api/chat/stream?token=<jwt_token>
+    """
     await websocket.accept()
+    
+    # Determine which client to use
+    user_id = get_user_id_from_token(token)
+    
+    if user_id:
+        # Authenticated user - use multi-account client
+        client = MultiAccountGeminiClient(user_id)
+    else:
+        # Unauthenticated - use default API key
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            await websocket.send_json({
+                "type": "error",
+                "content": "No API key available. Please login or set GEMINI_API_KEY.",
+                "trace_id": str(uuid.uuid4())
+            })
+            await websocket.close()
+            return
+        client = GeminiAPIClient(api_key)
+    
     try:
         while True:
             # Receive input from client
             data_json = await websocket.receive_text()
             data = json.loads(data_json)
-            user_prompt = data.get("prompt")
+            user_prompt = data.get("prompt") or data.get("content") or data.get("message")
             
             if not user_prompt:
                 continue
@@ -34,6 +77,7 @@ async def websocket_endpoint(
 
             # 1. Retrieve Context
             relevant_memories = store.retrieve_context(user_prompt)
+            context_list = [m.get("content", str(m)) for m in relevant_memories] if relevant_memories else []
             
             # 2. Stream Response
             full_response_text = ""
@@ -42,23 +86,33 @@ async def websocket_endpoint(
             await websocket.send_json({
                 "type": "start", 
                 "context_used": len(relevant_memories),
-                "trace_id": trace_id
+                "trace_id": trace_id,
+                "authenticated": user_id is not None
             })
 
-            async for chunk in gemini_client.stream_chat(user_prompt, relevant_memories):
-                # Try to parse if it's JSON from CLI, otherwise treat as raw text
-                try:
-                    chunk_data = json.loads(chunk)
-                    text_chunk = chunk_data.get("text", "") 
-                except:
-                    text_chunk = chunk
-
-                full_response_text += text_chunk
+            try:
+                async for chunk in client.stream(user_prompt, context_list):
+                    full_response_text += chunk
+                    await websocket.send_json({
+                        "type": "chunk", 
+                        "content": chunk,
+                        "trace_id": trace_id
+                    })
+                    
+            except QuotaExceededError as e:
                 await websocket.send_json({
-                    "type": "chunk", 
-                    "content": text_chunk,
+                    "type": "error",
+                    "content": "All API accounts have exceeded their quota. Please add more accounts or wait for quota reset.",
                     "trace_id": trace_id
                 })
+                continue
+            except Exception as e:
+                await websocket.send_json({
+                    "type": "error",
+                    "content": f"AI generation error: {str(e)}",
+                    "trace_id": trace_id
+                })
+                continue
 
             # 3. Save to Memory
             store.add_interaction(user_prompt, full_response_text)
@@ -73,5 +127,8 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         print("Client disconnected")
     except Exception as e:
-        print(f"Error: {e}")
-        await websocket.close()
+        print(f"WebSocket error: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass

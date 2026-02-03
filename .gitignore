@@ -1,0 +1,9 @@
+venv/
+*.pyc
+__pycache__/
+*.db
+.env
+*.egg-info/
+dist/
+build/
+.gemini_deck.db

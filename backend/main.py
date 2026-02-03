@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import chat, system, memory, agent
+from app.routers import chat, system, memory, agent, auth, accounts
+from app.services.database import init_db
 import uvicorn
 import os
 
@@ -19,7 +20,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    init_db()
+
 # Router Registration
+app.include_router(auth.router)  # Auth routes (no prefix, already has /api/auth)
+app.include_router(accounts.router)  # Account management (no prefix, already has /api/accounts)
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(memory.router, prefix="/api/memory", tags=["Memory"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
@@ -31,3 +39,4 @@ async def root():
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
