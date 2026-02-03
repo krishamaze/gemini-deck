@@ -7,6 +7,37 @@ class GeminiClient:
     def __init__(self):
         self.command = ["gemini", "--headless"]
 
+    async def generate_text(self, prompt: str, context: list = None) -> str:
+        """
+        Executes Gemini CLI and returns the full response text.
+        """
+        full_prompt = prompt
+        if context:
+            context_str = "\n".join([f"- {m.get('user_prompt', '')} -> {m.get('ai_response', '')}" for m in context])
+            full_prompt = f"Context from past interactions:\n{context_str}\n\nUser Query: {prompt}"
+
+        proc = await asyncio.create_subprocess_exec(
+            *self.command, "--prompt", full_prompt,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await proc.communicate()
+        
+        if proc.returncode != 0:
+            raise Exception(f"Gemini CLI Error: {stderr.decode()}")
+
+        # Parse JSONL output to reconstruct full text
+        full_text = ""
+        for line in stdout.decode().splitlines():
+            try:
+                data = json.loads(line)
+                full_text += data.get("text", "")
+            except:
+                pass
+                
+        return full_text if full_text else stdout.decode()
+
     async def stream_chat(self, prompt: str, context: list = None) -> AsyncGenerator[str, None]:
         """
         Executes Gemini CLI and yields chunks of response.

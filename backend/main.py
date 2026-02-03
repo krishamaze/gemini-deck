@@ -1,6 +1,6 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import chat, system, memory
+from app.routers import chat, system, memory, agent
 import uvicorn
 import os
 
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(memory.router, prefix="/api/memory", tags=["Memory"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
+app.include_router(agent.router, prefix="/api/agent", tags=["Agent"])
 
 @app.get("/")
 async def root():
